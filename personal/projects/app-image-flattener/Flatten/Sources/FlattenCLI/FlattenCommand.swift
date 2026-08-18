@@ -170,7 +170,8 @@ struct Query: AsyncParsableCommand {
     @Argument(help: "Path to a rules JSON file (RuleNode AST).")
     var rules: String
 
-    @Flag(help: "Include images whose catalogs disagree (normally auto-protected).")
+    @ArgumentParser.Flag(
+        help: "Include images whose catalogs disagree (normally auto-protected).")
     var includeConflicts = false
 
     @Option(help: "Print up to N matching image paths.")
