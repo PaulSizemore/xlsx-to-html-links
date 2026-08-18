@@ -80,7 +80,12 @@ public struct RuleCompiler: Sendable {
             let (sql, args) = try compileGroup(children, joiner: " OR ", empty: "0")
             return ("NOT (\(sql))", args)
         case .criterion(let criterion):
-            return try compileCriterion(criterion)
+            // SQL comparisons on NULL yield NULL, and NOT (NULL) is NULL —
+            // which would silently drop images from NONE groups (e.g. "not
+            // picked" must match images with no flag claim at all). Force
+            // every leaf to strict true/false.
+            let (sql, args) = try compileCriterion(criterion)
+            return ("COALESCE((\(sql)), 0)", args)
         }
     }
 
