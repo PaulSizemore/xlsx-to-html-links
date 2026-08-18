@@ -25,10 +25,15 @@ final class RuleCompilerTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    /// rating_records.source_id is a real foreign key; register a source row.
+    private func source(_ label: String) async throws -> Int64 {
+        try await store.addSource(kind: "test", path: "/test-source/\(label)", displayName: label)
+    }
+
     @discardableResult
     private func image(
         _ name: String, size: Int64 = 100, captureTime: Int64? = nil,
-        rating: Int? = nil, flag: String? = nil, sourceID: Int64 = 1,
+        rating: Int? = nil, flag: String? = nil,
         origin: String = "lrcat"
     ) async throws -> Int64 {
         let id = try await store.upsertImage(
@@ -37,6 +42,7 @@ final class RuleCompilerTests: XCTestCase {
                 filename: name, ext: (name as NSString).pathExtension.lowercased(),
                 fileSize: size, mtime: 0, captureTime: captureTime))
         if rating != nil || flag != nil {
+            let sourceID = try await source(origin)
             try await store.upsertRatingRecord(
                 RatingRecordRow(
                     imageID: id, sourceID: sourceID, origin: origin,
@@ -85,9 +91,10 @@ final class RuleCompilerTests: XCTestCase {
         // Sidecar says 1, catalog says 5 → effective is 5, so "rating <= 2"
         // must NOT match. (Same image, two origins — also a conflict.)
         let id = try await image("both.cr3", rating: 5, origin: "lrcat")
+        let sidecarSource = try await source("sidecar")
         try await store.upsertRatingRecord(
             RatingRecordRow(
-                imageID: id, sourceID: 2, origin: "xmp_sidecar",
+                imageID: id, sourceID: sidecarSource, origin: "xmp_sidecar",
                 rating: 1, matchConfidence: "exact"))
 
         let lowRated: RuleNode = .criterion(
@@ -105,9 +112,10 @@ final class RuleCompilerTests: XCTestCase {
 
     func testConflictedImagesAreAutoProtected() async throws {
         let id = try await image("conflicted.cr3", rating: 5, origin: "lrcat")
+        let sidecarSource = try await source("sidecar")
         try await store.upsertRatingRecord(
             RatingRecordRow(
-                imageID: id, sourceID: 2, origin: "xmp_sidecar",
+                imageID: id, sourceID: sidecarSource, origin: "xmp_sidecar",
                 rating: 1, matchConfidence: "exact"))
 
         let matchAll: RuleNode = .all([])
