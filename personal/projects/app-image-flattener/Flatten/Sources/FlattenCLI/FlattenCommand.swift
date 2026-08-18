@@ -2,6 +2,7 @@ import ArgumentParser
 import CatalogKit
 import Foundation
 import IndexStore
+import RulesKit
 import ScanKit
 
 @main
@@ -162,16 +163,44 @@ struct Ingest: AsyncParsableCommand {
 
 struct Query: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Evaluate a rules JSON file against the index. [Phase 2]")
+        abstract: "Evaluate a rules JSON file (RuleNode AST) against the index.")
 
     @OptionGroup var options: WorkspaceOptions
 
     @Argument(help: "Path to a rules JSON file (RuleNode AST).")
     var rules: String
 
+    @Flag(help: "Include images whose catalogs disagree (normally auto-protected).")
+    var includeConflicts = false
+
+    @Option(help: "Print up to N matching image paths.")
+    var samples: Int = 0
+
     mutating func run() async throws {
-        print("query: not implemented until Phase 2 (rules engine)")
-        throw ExitCode(64)
+        let data = try Data(contentsOf: URL(fileURLWithPath: rules))
+        let rule = try JSONDecoder().decode(RuleNode.self, from: data)
+
+        let compiler = RuleCompiler(
+            options: CompileOptions(autoProtectConflicts: !includeConflicts, now: Date()))
+        let compiled = try compiler.compile(rule)
+
+        let (store, _) = try options.openStore()
+        let evaluation = try await store.evaluate(
+            whereSQL: compiled.whereSQL, arguments: compiled.arguments)
+
+        print("Matched:   \(evaluation.matchedCount) images · \(Scan.formatBytes(evaluation.matchedBytes))")
+        print("Protected: \(evaluation.protectedCount) images · \(Scan.formatBytes(evaluation.protectedBytes))")
+        print("Total:     \(evaluation.totalCount) images · \(Scan.formatBytes(evaluation.totalBytes))")
+
+        if samples > 0 {
+            let ids = try await store.matchingImageIDs(
+                whereSQL: compiled.whereSQL, arguments: compiled.arguments, limit: samples)
+            for id in ids {
+                if let image = try await store.fetchImageByID(id) {
+                    print("  \(image.absPath ?? image.relPath)")
+                }
+            }
+        }
     }
 }
 

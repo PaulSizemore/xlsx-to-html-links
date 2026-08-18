@@ -5,7 +5,7 @@ import GRDB
 /// UI/CLI reads go through the same actor in Phase 0; snapshot reads for the
 /// grid arrive with the app shell (Phase 4).
 public actor IndexStore {
-    private let pool: DatabasePool
+    let pool: DatabasePool
 
     public init(path: String) throws {
         pool = try DatabasePool(path: path)
@@ -95,6 +95,13 @@ public actor IndexStore {
                 sql: "SELECT * FROM images WHERE volume_uuid = ? AND rel_path = ?",
                 arguments: [volumeUUID, relPath]
             )
+        }
+    }
+
+    public func fetchImageByID(_ id: Int64) throws -> ImageRecord? {
+        try pool.read { db in
+            try ImageRecord.fetchOne(
+                db, sql: "SELECT * FROM images WHERE id = ?", arguments: [id])
         }
     }
 

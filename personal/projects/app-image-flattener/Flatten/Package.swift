@@ -47,6 +47,6 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
             ]
         ),
-        .testTarget(name: "RulesKitTests", dependencies: ["RulesKit"]),
+        .testTarget(name: "RulesKitTests", dependencies: ["RulesKit", "IndexStore"]),
     ]
 )

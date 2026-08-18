@@ -3,9 +3,21 @@
 Engine package for **Flatten** — see [../SPEC.md](../SPEC.md) and
 [../ARCHITECTURE.md](../ARCHITECTURE.md).
 
-## Status: Phase 1 (catalog ingestion & the join) — in progress
+## Status: Phase 2 (rules engine) — in progress
 
-Done since Phase 0:
+Done in Phase 2 so far:
+
+- `RuleCompiler`: the rule AST compiles to a single SQL predicate over
+  images ⋈ rating_records ⋈ overrides — effective ratings resolve by
+  precedence *inside SQL*, conflicted images are auto-protected by default,
+  and protect/flatten pins override the rule in both directions.
+- `IndexStore.evaluate`: matched/protected counts and bytes in one query.
+- `flatten-cli query rules.json [--samples N] [--include-conflicts]` is live.
+
+Still open in Phase 2: size-model sampling (needs Phase 3 encoders), the
+100k-row perf benchmark, `flatten-cli plan`.
+
+Done in Phase 1:
 
 - `LrcatReader`: read-only Lightroom Classic catalog parser over a snapshot
   copy — ratings, pick/reject flags, color labels, capture times, keywords,
