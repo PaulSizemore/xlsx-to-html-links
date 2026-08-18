@@ -105,6 +105,7 @@ public struct ImageScanner: Sendable {
                 let record = ImageRecord(
                     volumeUUID: volumeUUID,
                     relPath: Self.relativePath(of: url, toVolumeRoot: volumeRoot),
+                    absPath: url.standardizedFileURL.path,
                     filename: url.lastPathComponent,
                     ext: url.pathExtension.lowercased(),
                     fileSize: fileSize,

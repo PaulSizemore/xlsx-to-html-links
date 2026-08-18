@@ -71,6 +71,15 @@ enum Migrations {
                 """)
         }
 
+        // v2: absolute path column for tier-1 (exact) catalog reconciliation.
+        // rel_path + volume_uuid remains the durable identity; abs_path is the
+        // as-scanned location used for joining against catalog path claims.
+        migrator.registerMigration("v2") { db in
+            try db.execute(sql: "ALTER TABLE images ADD COLUMN abs_path TEXT")
+            try db.execute(
+                sql: "CREATE INDEX idx_images_abs_path ON images(abs_path COLLATE NOCASE)")
+        }
+
         return migrator
     }
 }

@@ -23,7 +23,10 @@ let package = Package(
             dependencies: [.product(name: "GRDB", package: "GRDB.swift")]
         ),
         .target(name: "ScanKit", dependencies: ["IndexStore"]),
-        .target(name: "CatalogKit", dependencies: ["IndexStore"]),
+        .target(
+            name: "CatalogKit",
+            dependencies: ["IndexStore", .product(name: "GRDB", package: "GRDB.swift")]
+        ),
         .target(name: "RulesKit", dependencies: ["IndexStore"]),
         .target(name: "RenderKit"),
         .target(name: "JournalKit", dependencies: ["IndexStore"]),
@@ -37,7 +40,13 @@ let package = Package(
         ),
         .testTarget(name: "IndexStoreTests", dependencies: ["IndexStore"]),
         .testTarget(name: "ScanKitTests", dependencies: ["ScanKit", "IndexStore"]),
-        .testTarget(name: "CatalogKitTests", dependencies: ["CatalogKit"]),
+        .testTarget(
+            name: "CatalogKitTests",
+            dependencies: [
+                "CatalogKit", "IndexStore",
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ]
+        ),
         .testTarget(name: "RulesKitTests", dependencies: ["RulesKit"]),
     ]
 )

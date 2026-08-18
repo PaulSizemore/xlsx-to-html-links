@@ -3,9 +3,31 @@
 Engine package for **Flatten** — see [../SPEC.md](../SPEC.md) and
 [../ARCHITECTURE.md](../ARCHITECTURE.md).
 
-## Status: Phase 0 (foundations)
+## Status: Phase 1 (catalog ingestion & the join) — in progress
 
-Done in this phase:
+Done since Phase 0:
+
+- `LrcatReader`: read-only Lightroom Classic catalog parser over a snapshot
+  copy — ratings, pick/reject flags, color labels, capture times, keywords,
+  collections, develop-history presence, full paths. Column/table presence is
+  detected per catalog; unknown schemas degrade or fail closed.
+- `XmpReader`: XMP sidecar parser (attribute and element forms, dc:subject,
+  lr:hierarchicalSubject).
+- `Reconciler`: tier-1 exact path (case-insensitive) and tier-2 relink
+  (filename + capture time, unique-only). Ambiguity never guesses. Tier 3
+  (content) still to come.
+- `LrcatIngestor` / `SidecarIngestor` / `RatingStore`: catalog → reconcile →
+  rating_records claims → resolved `EffectiveRating`, with ingest reports
+  (matched exact/relinked, unmatched samples, unknown-to-any-catalog count).
+- `flatten-cli ingest <catalog.lrcat>` and `flatten-cli ingest <folder>`
+  (sidecars) are live.
+- Synthetic `.lrcat` fixture builder + reader/reconciler/ingest/conflict tests.
+
+Still open in Phase 1: content-tier reconciliation, real-catalog fixture
+matrix (run `scripts/import-fixtures.sh` on your backups), custom label-name
+mapping.
+
+Done in Phase 0:
 
 - `FlattenCore` SPM package, Swift 6 strict concurrency, macOS 14+.
 - `IndexStore` on **GRDB**: v1 schema (sources / images / rating_records /

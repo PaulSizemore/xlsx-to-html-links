@@ -1,4 +1,5 @@
 import ArgumentParser
+import CatalogKit
 import Foundation
 import IndexStore
 import ScanKit
@@ -91,16 +92,71 @@ struct Scan: AsyncParsableCommand {
 
 struct Ingest: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Ingest ratings from a catalog (.lrcat) or XMP sidecars. [Phase 1]")
+        abstract: """
+            Ingest ratings into the index: from a .lrcat catalog, or from the \
+            XMP sidecars discovered during scan when given a folder.
+            """)
 
     @OptionGroup var options: WorkspaceOptions
 
-    @Argument(help: "Path to a .lrcat file or a folder of XMP sidecars.")
+    @Argument(help: "Path to a .lrcat file, or a scanned folder (ingests its XMP sidecars).")
     var catalog: String
 
     mutating func run() async throws {
-        print("ingest: not implemented until Phase 1 (catalog ingestion & the join)")
-        throw ExitCode(64)
+        let (store, _) = try options.openStore()
+        let url = URL(fileURLWithPath: catalog)
+
+        if url.pathExtension.lowercased() == "lrcat" {
+            let sourceID = try await store.addSource(
+                kind: "lrcat", path: url.path, displayName: url.lastPathComponent)
+            print("Ingesting Lightroom catalog \(url.lastPathComponent) …")
+            let report = try await LrcatIngestor(store: store)
+                .ingest(catalogPath: url.path, sourceID: sourceID)
+
+            print("")
+            print("Schema version:     \(report.schemaVersion ?? "unknown")")
+            if let caps = report.capabilities {
+                print(
+                    "Capabilities:       keywords=\(caps.hasKeywords) "
+                        + "collections=\(caps.hasCollections) "
+                        + "develop-history=\(caps.hasDevelopHistory)")
+            }
+            print("Catalog entries:    \(report.catalogEntries)")
+            print("Matched (exact):    \(report.matchedExact)")
+            print("Matched (relinked): \(report.matchedRelinked)")
+            print("Unmatched:          \(report.unmatched)")
+            if !report.unmatchedSamples.isEmpty {
+                print("Unmatched samples:")
+                for path in report.unmatchedSamples {
+                    print("  \(path)")
+                }
+            }
+            print("Claims written:     \(report.recordsWritten)")
+        } else {
+            var isDirectory: ObjCBool = false
+            guard
+                FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                isDirectory.boolValue
+            else {
+                throw ValidationError("Expected a .lrcat file or a directory: \(url.path)")
+            }
+            let sourceID = try await store.addSource(
+                kind: "folder", path: url.path, displayName: url.lastPathComponent)
+            print("Ingesting XMP sidecars under \(url.path) …")
+            let report = try await SidecarIngestor(store: store)
+                .ingest(sourceID: sourceID, under: url.standardizedFileURL.path)
+
+            print("")
+            print("Sidecars read:  \(report.sidecarsRead)")
+            print("Claims written: \(report.recordsWritten)")
+            for line in report.errors.prefix(20) {
+                print("  error: \(line)")
+            }
+        }
+
+        let unknown = try await store.unknownToCatalogsCount()
+        let total = try await store.imageCount()
+        print("On disk but unknown to any catalog: \(unknown) of \(total) indexed images")
     }
 }
 

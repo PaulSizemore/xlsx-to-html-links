@@ -97,4 +97,99 @@ public actor IndexStore {
             )
         }
     }
+
+    public func fetchImagesWithSidecars() throws -> [ImageRecord] {
+        try pool.read { db in
+            try ImageRecord.fetchAll(
+                db,
+                sql: "SELECT * FROM images WHERE xmp_sidecar_path IS NOT NULL ORDER BY id"
+            )
+        }
+    }
+
+    // MARK: Reconciliation lookups (CatalogKit's Reconciler)
+
+    /// Tier 1: exact absolute-path match, case-insensitive (APFS default).
+    public func findImageIDs(absPath: String) throws -> [Int64] {
+        try pool.read { db in
+            try Int64.fetchAll(
+                db,
+                sql: "SELECT id FROM images WHERE abs_path = ? COLLATE NOCASE",
+                arguments: [absPath]
+            )
+        }
+    }
+
+    /// Tier 2: relink candidates by filename + capture time.
+    public func findImageIDs(filename: String, captureTime: Int64) throws -> [Int64] {
+        try pool.read { db in
+            try Int64.fetchAll(
+                db,
+                sql: """
+                    SELECT id FROM images
+                    WHERE filename = ? COLLATE NOCASE AND capture_time = ?
+                    """,
+                arguments: [filename, captureTime]
+            )
+        }
+    }
+
+    // MARK: Rating records
+
+    /// Insert-or-update keyed on the (image_id, source_id, origin) identity.
+    @discardableResult
+    public func upsertRatingRecord(_ record: RatingRecordRow) throws -> Int64 {
+        try pool.write { db in
+            var record = record
+            if let existing = try Int64.fetchOne(
+                db,
+                sql: """
+                    SELECT id FROM rating_records
+                    WHERE image_id = ? AND source_id = ? AND origin = ?
+                    """,
+                arguments: [record.imageID, record.sourceID, record.origin]
+            ) {
+                record.id = existing
+                try record.update(db)
+                return existing
+            }
+            try record.insert(db)
+            guard let id = record.id else {
+                throw DatabaseError(message: "rating record insert returned no rowid")
+            }
+            return id
+        }
+    }
+
+    public func fetchRatingRecords(imageID: Int64) throws -> [RatingRecordRow] {
+        try pool.read { db in
+            try RatingRecordRow.fetchAll(
+                db,
+                sql: "SELECT * FROM rating_records WHERE image_id = ? ORDER BY id",
+                arguments: [imageID]
+            )
+        }
+    }
+
+    public func ratingRecordCount() throws -> Int {
+        try pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM rating_records") ?? 0
+        }
+    }
+
+    /// Images no catalog has an opinion about — themselves prime flatten
+    /// candidates ("on disk but unknown to any catalog").
+    public func unknownToCatalogsCount() throws -> Int {
+        try pool.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*) FROM images i
+                    WHERE NOT EXISTS (
+                      SELECT 1 FROM rating_records r WHERE r.image_id = i.id
+                    )
+                    """
+            ) ?? 0
+        }
+    }
 }
