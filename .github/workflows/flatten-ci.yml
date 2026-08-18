@@ -1,0 +1,47 @@
+name: flatten-ci
+
+on:
+  push:
+    paths:
+      - "personal/projects/app-image-flattener/**"
+      - ".github/workflows/flatten-ci.yml"
+  pull_request:
+    paths:
+      - "personal/projects/app-image-flattener/**"
+      - ".github/workflows/flatten-ci.yml"
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: personal/projects/app-image-flattener/Flatten
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            personal/projects/app-image-flattener/Flatten/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('personal/projects/app-image-flattener/Flatten/Package.swift') }}
+          restore-keys: swiftpm-${{ runner.os }}-
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: CLI smoke test
+        run: |
+          mkdir -p /tmp/scan-fixture/shoot1
+          printf 'fake' > /tmp/scan-fixture/shoot1/a.cr3
+          printf 'fake' > /tmp/scan-fixture/shoot1/a.jpg
+          printf 'fake' > /tmp/scan-fixture/shoot1/a.xmp
+          printf 'fake' > /tmp/scan-fixture/shoot1/b.nef
+          swift run flatten-cli scan /tmp/scan-fixture --workspace /tmp/flatten-ws
+          test -f /tmp/flatten-ws/index.sqlite

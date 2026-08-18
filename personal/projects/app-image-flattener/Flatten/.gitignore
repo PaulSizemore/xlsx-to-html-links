@@ -1,0 +1,12 @@
+.build/
+.swiftpm/
+*.xcodeproj
+DerivedData/
+.flatten-workspace/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Personal catalog fixtures stay local; only the manifest is committed.
+Fixtures/lrcat/*
+!Fixtures/lrcat/manifest.tsv
