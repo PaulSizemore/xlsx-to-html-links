@@ -299,9 +299,11 @@ Repo, `FlattenCore` SPM package, strict concurrency baseline, GRDB + IndexStore 
 
 ---
 
-## 8. Decisions needed before Phase 0
+## 8. Pre–Phase 0 decisions
 
-1. **GRDB vs. raw SQLite** — recommended: GRDB (migrations, value observation for live UI counts). Low risk.
-2. **Grid technology spike** — 2-day prototype of NSCollectionView vs. custom CALayer wall at 100k items, decided before Phase 4, doesn't block Phases 0–3.
-3. **Fixture acquisition** — need real `.lrcat` files across LR 11–14 (own catalogs + community-donated anonymized catalogs; a script to strip previews/PII from donated catalogs is a Phase 0 deliverable).
-4. **SSIMULACRA2 dependency** — vendored C++ vs. Swift port; spike in Phase 6, stub the protocol now.
+| # | Decision | Status |
+|---|---|---|
+| 1 | Database layer | **DECIDED (2026-08-18): GRDB** — migrations + value observation for live UI counts. |
+| 2 | Grid technology | **DECIDED (2026-08-18): approved as planned** — 2-day spike of NSCollectionView vs. custom CALayer wall at 100k items, run before Phase 4; doesn't block Phases 0–3. |
+| 3 | Fixture acquisition | **DECIDED (2026-08-18): sourced from Paul's own catalog backups** across LR versions — no community donations needed, so the donated-catalog PII-strip script is cut from Phase 0. Phase 0 instead adds a small fixture-import step: copy the backup `.lrcat` files into the test corpus and record each one's schema version. |
+| 4 | SSIMULACRA2 dependency | Open — vendored C++ vs. Swift port; spike in Phase 6, protocol stubbed now. |
