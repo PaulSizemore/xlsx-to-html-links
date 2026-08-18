@@ -27,16 +27,18 @@ public struct ImageScanner: Sendable {
         self.thumbnails = thumbnails
     }
 
-    public func scan(root: URL, sourceID: Int64) async throws -> ScanSummary {
-        var summary = ScanSummary()
-
-        // Pass 1: enumerate and classify.
+    private struct Classification {
         var rawFiles: [URL] = []
         // Keyed by "<dir>/<lowercased basename>" for sibling lookup.
         var jpegsByStem: [String: URL] = [:]
         var xmpsByStem: [String: URL] = [:]
+        var filesSeen = 0
+        var skippedNonImage = 0
+    }
 
-        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+    /// Synchronous by requirement: DirectoryEnumerator iteration is
+    /// unavailable from async contexts under Swift 6.
+    private static func classify(root: URL, keys: [URLResourceKey]) throws -> Classification {
         guard
             let enumerator = FileManager.default.enumerator(
                 at: root, includingPropertiesForKeys: keys,
@@ -45,35 +47,47 @@ public struct ImageScanner: Sendable {
             throw CocoaError(.fileReadNoSuchFile)
         }
 
+        var result = Classification()
         for case let url as URL in enumerator {
             let values = try? url.resourceValues(forKeys: Set(keys))
             guard values?.isRegularFile == true else { continue }
-            summary.filesSeen += 1
+            result.filesSeen += 1
 
             let ext = url.pathExtension.lowercased()
             if RawFormats.extensions.contains(ext) {
-                rawFiles.append(url)
+                result.rawFiles.append(url)
             } else if RawFormats.jpegExtensions.contains(ext) {
-                jpegsByStem[Self.stemKey(url)] = url
+                result.jpegsByStem[stemKey(url)] = url
             } else if ext == RawFormats.sidecarExtension {
-                xmpsByStem[Self.stemKey(url)] = url
+                result.xmpsByStem[stemKey(url)] = url
             } else {
-                summary.skippedNonImage += 1
+                result.skippedNonImage += 1
             }
         }
+        return result
+    }
+
+    public func scan(root: URL, sourceID: Int64) async throws -> ScanSummary {
+        var summary = ScanSummary()
+
+        // Pass 1: enumerate and classify.
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        let classified = try Self.classify(root: root, keys: keys)
+        summary.filesSeen = classified.filesSeen
+        summary.skippedNonImage = classified.skippedNonImage
 
         // Pass 2: build records for each RAW (RAW+JPEG collapses onto the RAW row).
         let (volumeUUID, volumeRoot) = Self.volumeIdentity(for: root)
 
-        for url in rawFiles {
+        for url in classified.rawFiles {
             do {
                 let values = try url.resourceValues(forKeys: Set(keys))
                 let fileSize = Int64(values.fileSize ?? 0)
                 let mtime = Int64(values.contentModificationDate?.timeIntervalSince1970 ?? 0)
 
                 let stem = Self.stemKey(url)
-                let jpegSibling = jpegsByStem[stem]
-                let sidecar = xmpsByStem[stem]
+                let jpegSibling = classified.jpegsByStem[stem]
+                let sidecar = classified.xmpsByStem[stem]
 
                 let meta = exif.read(url: url)
 
