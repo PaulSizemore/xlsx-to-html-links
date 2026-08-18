@@ -207,24 +207,119 @@ struct Query: AsyncParsableCommand {
 
 struct Plan: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Build a flatten plan from rules and settings. [Phase 2]")
+        abstract: "Freeze a flatten plan from rules and settings.")
 
     @OptionGroup var options: WorkspaceOptions
 
+    @Argument(help: "Path to a rules JSON file (RuleNode AST).")
+    var rules: String
+
+    @Option(help: "Output format: heic or jpeg.")
+    var format: String = "heic"
+
+    @Option(help: "Encode quality 0.0–1.0.")
+    var quality: Double = 0.8
+
+    @Option(help: "Originals policy: dry-run, alongside, or archive:<path>.")
+    var originals: String = "dry-run"
+
+    @Option(help: "Write outputs under this root instead of next to originals.")
+    var destination: String?
+
     mutating func run() async throws {
-        print("plan: not implemented until Phase 2 (dry-run economics)")
-        throw ExitCode(64)
+        guard let outputFormat = OutputFormat(rawValue: format),
+            outputFormat == .heic || outputFormat == .jpeg
+        else {
+            throw ValidationError("format must be heic or jpeg (others land in Phase 6)")
+        }
+        let policy: OriginalsPolicy
+        switch originals {
+        case "dry-run": policy = .dryRun
+        case "alongside": policy = .keepAlongside
+        default:
+            guard originals.hasPrefix("archive:") else {
+                throw ValidationError("originals must be dry-run, alongside, or archive:<path>")
+            }
+            policy = .archive(to: String(originals.dropFirst("archive:".count)))
+        }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: rules))
+        let rule = try JSONDecoder().decode(RuleNode.self, from: data)
+        let compiled = try RuleCompiler(options: CompileOptions(now: Date())).compile(rule)
+
+        let (store, _) = try options.openStore()
+        let ids = try await store.matchingImageIDs(
+            whereSQL: compiled.whereSQL, arguments: compiled.arguments)
+        let evaluation = try await store.evaluate(
+            whereSQL: compiled.whereSQL, arguments: compiled.arguments)
+
+        let plan = FlattenPlan(
+            imageIDs: ids,
+            settings: EncodeSettings(format: outputFormat, quality: quality),
+            originalsPolicy: policy,
+            destinationRoot: destination)
+
+        let plansDir = URL(fileURLWithPath: options.workspace, isDirectory: true)
+            .appendingPathComponent("plans", isDirectory: true)
+        try FileManager.default.createDirectory(at: plansDir, withIntermediateDirectories: true)
+        let planID = "plan-\(Int(Date().timeIntervalSince1970))"
+        let planURL = plansDir.appendingPathComponent("\(planID).json")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(plan).write(to: planURL)
+
+        print("Plan frozen: \(planURL.path)")
+        print("Images:      \(ids.count)")
+        print("Input bytes: \(Scan.formatBytes(evaluation.matchedBytes))")
+        print("Originals:   \(originals)")
+        print("Run it with: flatten-cli run \(planURL.path) --workspace \(options.workspace)")
     }
 }
 
 struct Run: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Execute a confirmed flatten plan. [Phase 3]")
+        abstract: "Execute a frozen flatten plan.")
 
     @OptionGroup var options: WorkspaceOptions
 
+    @Argument(help: "Path to a plan JSON file produced by `plan`.")
+    var plan: String
+
     mutating func run() async throws {
-        print("run: not implemented until Phase 3 (pipeline)")
-        throw ExitCode(64)
+        let data = try Data(contentsOf: URL(fileURLWithPath: plan))
+        let flattenPlan = try JSONDecoder().decode(FlattenPlan.self, from: data)
+        let (store, _) = try options.openStore()
+
+        #if canImport(ImageIO)
+        let transcoder: any Transcoding = ImageIOTranscoder()
+        let verifier: any OutputVerifying = ImageIOVerifier()
+        #else
+        let transcoder: any Transcoding = UnavailableTranscoder()
+        struct NoVerifier: OutputVerifying {
+            func verify(output: URL, expected: TranscodeResult) throws {}
+        }
+        let verifier: any OutputVerifying = NoVerifier()
+        #endif
+
+        let batchID = "batch-\(Int(Date().timeIntervalSince1970))"
+        let runner = BatchRunner(store: store, transcoder: transcoder, verifier: verifier)
+        print("Running \(flattenPlan.imageIDs.count) items as \(batchID) …")
+        let result = try await runner.run(plan: flattenPlan, batchID: batchID)
+
+        print("")
+        print("Completed: \(result.completed)")
+        print("Skipped:   \(result.skipped)")
+        print("Failed:    \(result.failed.count)")
+        for failure in result.failed.prefix(20) {
+            print("  image \(failure.imageID): \(failure.reason)")
+        }
+        if case .dryRun = flattenPlan.originalsPolicy {
+            print("Dry run — nothing was written.")
+        } else {
+            print("In:  \(Scan.formatBytes(result.bytesIn))")
+            print("Out: \(Scan.formatBytes(result.bytesOut))")
+            print("Reclaimable: \(Scan.formatBytes(result.bytesIn - result.bytesOut))")
+        }
+        print("Journal batch id: \(batchID)")
     }
 }

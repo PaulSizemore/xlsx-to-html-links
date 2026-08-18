@@ -80,6 +80,25 @@ enum Migrations {
                 sql: "CREATE INDEX idx_images_abs_path ON images(abs_path COLLATE NOCASE)")
         }
 
+        // v3: the operation journal (every original-file mutation is recorded
+        // before/after it happens, §4.5–4.6) and the flattened-output pointer.
+        migrator.registerMigration("v3") { db in
+            try db.execute(sql: """
+                CREATE TABLE journal (
+                  id INTEGER PRIMARY KEY,
+                  batch_id TEXT NOT NULL,
+                  image_id INTEGER,
+                  kind TEXT NOT NULL,
+                  src_path TEXT,
+                  dst_path TEXT,
+                  detail TEXT,
+                  created_at INTEGER NOT NULL
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_journal_batch ON journal(batch_id)")
+            try db.execute(sql: "ALTER TABLE images ADD COLUMN flattened_path TEXT")
+        }
+
         return migrator
     }
 }

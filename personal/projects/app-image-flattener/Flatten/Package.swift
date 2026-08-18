@@ -48,5 +48,9 @@ let package = Package(
             ]
         ),
         .testTarget(name: "RulesKitTests", dependencies: ["RulesKit", "IndexStore"]),
+        .testTarget(
+            name: "PipelineKitTests",
+            dependencies: ["PipelineKit", "IndexStore", "RenderKit", "JournalKit"]
+        ),
     ]
 )
